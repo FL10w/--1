@@ -1,0 +1,84 @@
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+
+G = 6.67430e-11
+M_E = 5.29e22
+R_E = 600e3
+rho_0 = 1.225
+S = 83.3
+c_f = 0.3
+
+
+m_empty = 50e3
+m_fuel = 150e3
+m_dot = 600
+U = 3.5e3
+
+
+def atmospheric_density(h):
+    H = 8500
+    return rho_0 * np.exp(-h / H)
+
+def thrust_angle(t, altitude, speed):
+    global i
+    if speed < 100:
+        return 90 * np.pi / 180
+    else:
+        return max(90 - 0.2 * t, 0) * np.pi / 180
+
+def equations(t, y):
+    x, y_pos, vx, vy, m = y
+
+    r = np.sqrt(x**2 + y_pos**2)
+    v = np.sqrt(vx**2 + vy**2)
+
+    F_gravity = -G * M_E * m / r**3 * np.array([x, y_pos])
+
+    h = r - R_E 
+    rho = atmospheric_density(h) if h > 0 else 0
+    F_drag = -0.5 * c_f * rho * S * v * np.array([vx, vy])
+
+    F_thrust = np.array([0, 0])
+    dm_dt = 0
+    if m > m_empty:
+        theta = thrust_angle(t, h, v)
+        F_thrust = U * m_dot * np.array([np.cos(theta), np.sin(theta)])
+        dm_dt = -m_dot
+
+    ax, ay = (F_gravity + F_drag + F_thrust) / m
+
+    return [vx, vy, ax, ay, dm_dt]
+
+x0 = 0
+y0 = R_E
+vx0 = 0
+vy0 = 0
+m0 = m_empty + m_fuel
+
+t_span = (0, 50)
+t_eval = np.linspace(t_span[0], t_span[1], 2000)
+
+sol = solve_ivp(equations, t_span, [x0, y0, vx0, vy0, m0], t_eval=t_eval, method='RK45')
+
+x, y_pos, vx, vy, m = sol.y
+speed = np.sqrt(vx**2 + vy**2)
+altitude = np.sqrt(x**2 + y_pos**2) - R_E
+angles = [thrust_angle(t, alt, spd) for t, alt, spd in zip(sol.t, altitude, speed)]
+
+plt.figure(figsize=(15, 10))
+
+plt.subplot(3, 1, 1)
+plt.plot(sol.t, speed / 1e3)
+plt.title("Rocket Speed")
+plt.ylabel("Speed (km/s)")
+plt.grid()
+
+plt.subplot(3, 1, 2)
+plt.plot(sol.t, altitude / 1e3)
+plt.title("Rocket Altitude")
+plt.ylabel("Altitude (km)")
+plt.grid()
+
+plt.tight_layout()
+plt.show()
